@@ -1,0 +1,14 @@
+/* 响应式布局 — 移动端适配 */
+@media (max-width: 768px) {
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .grid-cols-3 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+  .grid-cols-2 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+  aside { display: none !important; }
+  main { padding: 1rem !important; }
+  .card { padding: 0.75rem !important; }
+  h2 { font-size: 1rem !important; }
+  table { font-size: 0.7rem !important; }
+}
+@media (max-width: 1024px) {
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
