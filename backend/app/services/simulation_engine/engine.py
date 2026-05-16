@@ -1,3 +1,2 @@
-"""模拟引擎 — 适配新浪行情缓存"""
-# tick() 改为从 _market_cache 读取，不再调用 provider.get_realtime_quote()
-# 策略数限制为5，每tick只扫描TOP20股票
+"""模拟引擎更新: quality+sentiment估算"""
+# _estimate_factor_from_quote 新增 quality 和 sentiment 分支
