@@ -1,96 +1,83 @@
-"""
-策略组合器 — 从因子池随机组合生成完整策略
-"""
-import random, json
+"""策略组合器 v2 — 动态风格 + 永不重复因子搭配"""
+import random, json, hashlib
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field, asdict
 from factors import FACTOR_REGISTRY
 
 STYLES = {
-    "short_term": {"name": "短线轮动", "hold_days_min": 1, "hold_days_max": 5, "rebalance_freq": "daily", "description": "快速进出，捕捉短期波动"},
-    "mid_term": {"name": "中线趋势", "hold_days_min": 5, "hold_days_max": 20, "rebalance_freq": "weekly", "description": "跟随中期趋势，持股数周"},
-    "low_vol": {"name": "低波动稳健", "hold_days_min": 10, "hold_days_max": 40, "rebalance_freq": "monthly", "description": "追求低回撤，稳健收益"},
-    "value": {"name": "白马价值", "hold_days_min": 20, "hold_days_max": 60, "rebalance_freq": "monthly", "description": "精选优质股票，长期持有"},
+    "short_term": {"name": "短线轮动", "hold_days_min": 1, "hold_days_max": 5, "rebalance_freq": "daily", "description": "快速进出"},
+    "mid_term": {"name": "中线趋势", "hold_days_min": 5, "hold_days_max": 20, "rebalance_freq": "weekly", "description": "跟随中期趋势"},
+    "low_vol": {"name": "低波动稳健", "hold_days_min": 10, "hold_days_max": 40, "rebalance_freq": "monthly", "description": "追求低回撤"},
+    "value": {"name": "白马价值", "hold_days_min": 20, "hold_days_max": 60, "rebalance_freq": "monthly", "description": "精选优质股"},
 }
+
+FACTOR_STYLE_TAG = {
+    "trend_ma": "趋势", "momentum": "动量", "breakout": "突破",
+    "volume": "量能", "money_flow": "资金流", "pullback": "低吸",
+    "volatility": "波动", "price_position": "位置", "fundamental": "价值",
+}
+
+def derive_dynamic_style(factors):
+    if not factors: return "均衡型"
+    sf = sorted(factors, key=lambda f: f.weight, reverse=True)
+    p = FACTOR_STYLE_TAG.get(sf[0].factor_name, "")
+    s = FACTOR_STYLE_TAG.get(sf[1].factor_name, "") if len(sf) > 1 else ""
+    return f"{p}{s}型" if p and s and p != s else (f"{p}驱动型" if p else "多因子均衡型")
 
 @dataclass
 class FactorSelection:
-    factor_name: str
-    params: Dict[str, Any]
-    weight: float
+    factor_name: str; params: Dict[str, Any]; weight: float
 
 @dataclass
 class StrategyDefinition:
-    name: str
-    style: str
-    core_logic: str
-    factors: List[FactorSelection]
-    entry_conditions: List[str]
-    buy_timing: str
-    take_profit_rules: List[Dict[str, Any]]
-    stop_loss_pct: float
-    position_rules: Dict[str, Any]
-    rebalance_rules: str
-    market_conditions: str
-    hold_days: tuple
-
+    name: str; style: str; dynamic_style: str; core_logic: str
+    factors: List[FactorSelection]; entry_conditions: List[str]
+    buy_timing: str; take_profit_rules: List[Dict[str, Any]]
+    stop_loss_pct: float; position_rules: Dict[str, Any]
+    rebalance_rules: str; market_conditions: str; hold_days: tuple
 
 class StrategyComposer:
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed=None):
         if seed: random.seed(seed)
-        self.used_combinations = set()
+        self.used_factor_combos = set()
+        self.used_param_hashes = set()
     
-    def compose(self) -> StrategyDefinition:
+    def compose(self):
         style_key = random.choice(list(STYLES.keys()))
         style = STYLES[style_key]
-        factor_count = random.randint(4, 6)
-        factor_names = random.sample(list(FACTOR_REGISTRY.keys()), factor_count)
-        combo_key = "-".join(sorted(factor_names))
+        fc = random.randint(4, 6)
+        fnames = random.sample(list(FACTOR_REGISTRY.keys()), fc)
+        ck = "-".join(sorted(fnames))
         retries = 0
-        while combo_key in self.used_combinations and retries < 20:
-            factor_count = random.randint(4, 6)
-            factor_names = random.sample(list(FACTOR_REGISTRY.keys()), factor_count)
-            combo_key = "-".join(sorted(factor_names))
-            retries += 1
-        self.used_combinations.add(combo_key)
-        raw_weights = [random.uniform(0.3, 1.0) for _ in factor_names]
-        total = sum(raw_weights)
-        weights = [w / total for w in raw_weights]
-        factors = []
-        entry_conditions = []
-        for i, fname in enumerate(factor_names):
-            factor_cls = FACTOR_REGISTRY[fname]
-            params = factor_cls().random_params()
-            factors.append(FactorSelection(factor_name=fname, params=params, weight=round(weights[i], 4)))
-            entry_conditions.append(f"{factor_cls.description}信号为正面")
-        take_profit = [
-            {"level": 1, "pct": round(random.uniform(0.03, 0.08), 2), "sell_ratio": round(random.uniform(0.2, 0.4), 1)},
-            {"level": 2, "pct": round(random.uniform(0.08, 0.15), 2), "sell_ratio": round(random.uniform(0.3, 0.5), 1)},
-            {"level": 3, "pct": round(random.uniform(0.15, 0.25), 2), "sell_ratio": 1.0},
-        ]
-        stop_loss = round(random.uniform(0.03, 0.10), 2)
-        position_rules = {
-            "max_total_position_pct": round(random.uniform(0.5, 0.9), 1),
-            "single_stock_pct": round(random.uniform(0.05, 0.20), 2),
-            "max_stocks": random.randint(3, 10),
-        }
-        style_name = style["name"]
-        factor_abbr = "-".join([f[:4].upper() for f in factor_names[:3]])
-        strategy_name = f"{style_name}-{factor_abbr}-{random.randint(1000, 9999)}"
-        return StrategyDefinition(
-            name=strategy_name, style=style_key,
-            core_logic=f"基于{len(factors)}个因子综合打分，{style['description']}",
-            factors=factors, entry_conditions=entry_conditions,
-            buy_timing="每日/每周收盘前评估，满足条件后次日开盘买入",
-            take_profit_rules=take_profit, stop_loss_pct=stop_loss,
-            position_rules=position_rules, rebalance_rules=f"{style['rebalance_freq']}调仓",
-            market_conditions=f"适用于{style['name']}行情环境",
-            hold_days=(style["hold_days_min"], style["hold_days_max"]),
-        )
+        while ck in self.used_factor_combos and retries < 50:
+            fc = random.randint(4, 6); fnames = random.sample(list(FACTOR_REGISTRY.keys()), fc)
+            ck = "-".join(sorted(fnames)); retries += 1
+        self.used_factor_combos.add(ck)
+        rw = [random.uniform(0.3, 1.0) for _ in fnames]
+        t = sum(rw); weights = [w/t for w in rw]
+        factors = []; ec = []; phs = ""
+        for i, fn in enumerate(fnames):
+            fc_obj = FACTOR_REGISTRY[fn]; p = fc_obj().random_params()
+            factors.append(FactorSelection(factor_name=fn, params=p, weight=round(weights[i], 4)))
+            ec.append(f"{fc_obj.description}信号为正面")
+            phs += f"{fn}:{sorted(p.values())}"
+        ph = hashlib.md5(phs.encode()).hexdigest()[:8]
+        r2 = 0
+        while ph in self.used_param_hashes and r2 < 20:
+            factors = []; phs = ""
+            for i, fn in enumerate(fnames):
+                fc_obj = FACTOR_REGISTRY[fn]; p = fc_obj().random_params()
+                factors.append(FactorSelection(factor_name=fn, params=p, weight=round(weights[i], 4)))
+                phs += f"{fn}:{sorted(p.values())}"
+            ph = hashlib.md5(phs.encode()).hexdigest()[:8]; r2 += 1
+        self.used_param_hashes.add(ph)
+        ds = derive_dynamic_style(factors)
+        tp = [{"level":1,"pct":round(random.uniform(0.03,0.08),2),"sell_ratio":round(random.uniform(0.2,0.4),1)},{"level":2,"pct":round(random.uniform(0.08,0.15),2),"sell_ratio":round(random.uniform(0.3,0.5),1)},{"level":3,"pct":round(random.uniform(0.15,0.25),2),"sell_ratio":1.0}]
+        sl = round(random.uniform(0.03, 0.10), 2)
+        pr = {"max_total_position_pct":round(random.uniform(0.5,0.9),1),"single_stock_pct":round(random.uniform(0.05,0.20),2),"max_stocks":random.randint(3,10)}
+        sn = f"{ds}-{ck[:20]}-{random.randint(1000,9999)}"
+        return StrategyDefinition(name=sn, style=style_key, dynamic_style=ds, core_logic=f"{ds}策略，基于{len(factors)}因子综合打分", factors=factors, entry_conditions=ec, buy_timing="收盘前评估", take_profit_rules=tp, stop_loss_pct=sl, position_rules=pr, rebalance_rules=f"{style['rebalance_freq']}调仓", market_conditions=f"适用于{style['name']}行情", hold_days=(style["hold_days_min"], style["hold_days_max"]))
     
-    def compose_batch(self, count: int = 10) -> List[StrategyDefinition]:
-        return [self.compose() for _ in range(count)]
+    def compose_batch(self, count=10): return [self.compose() for _ in range(count)]
 
-
-def strategy_to_dict(s: StrategyDefinition) -> dict:
-    return asdict(s)
+def strategy_to_dict(s: StrategyDefinition) -> dict: return asdict(s)
