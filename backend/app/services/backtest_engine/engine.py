@@ -1,4 +1,4 @@
-"""回测引擎 v5 — 直接加权求和(去归一化) + 阈值0.03 + 过户费001%"""
+"""回测引擎 v5 — 动态阈值 + 直接加权求和"""
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
@@ -28,7 +28,6 @@ class CostModel(bt.CommInfoBase):
         return max(v * self.p.commission, self.p.min_commission) + (v * self.p.stamp_tax if size < 0 else 0.0) + v * self.p.transfer_fee
 
 STYLE_STOP_MAP = {"short_term": 0.03, "mid_term": 0.07, "low_vol": 0.05, "value": 0.10}
-SIGNAL_THRESHOLD = 0.03
 
 def precompute_factors(data, strategy_def):
     scores = {}
@@ -70,10 +69,11 @@ class StrategyAdapter(bt.Strategy):
             if (self.data.close[0] - self.entry_price) / self.entry_price < -self.stop_loss_pct:
                 self.order = self.sell(size=self.position.size); self.signal_count += 1; return
         sellable = max(0, self.position.size - sum(self.bought_today))
-        if total_score > SIGNAL_THRESHOLD and pct < mp and self._check_price_limit(True):
+        dyn_threshold = 0.01 * (4 / max(len(self.factor_scores), 1))
+        if total_score > dyn_threshold and pct < mp and self._check_price_limit(True):
             size = int(cash * sp / max(self.data.close[0], 0.01) / 100) * 100
             if size >= 100: self.order = self.buy(size=size); self.bought_today.add(size); self.entry_price = self.data.close[0]; self.signal_count += 1
-        elif total_score < -SIGNAL_THRESHOLD and sellable >= 100 and self._check_price_limit(False):
+        elif total_score < -dyn_threshold and sellable >= 100 and self._check_price_limit(False):
             self.order = self.sell(size=sellable); self.signal_count += 1
 
 class EquityObserver(bt.Observer):
@@ -113,7 +113,7 @@ class BacktestEngine:
         aw = ta.get("won", {}).get("pnl", {}).get("average", 0) or 0
         al = abs(ta.get("lost", {}).get("pnl", {}).get("average", 1) or 1)
         sc = max(0, min(100, 50 + min(ar*100,25) - max(0,(md-0.05))*200 + min(sh*10,15) + (w-0.4)*50))
-        diag = f"因子:{nz}/{len(fs)}活跃|信号:{strat.signal_count}次|交易:{tt}笔"
+        diag = f"因子:{nz}/{len(fs)}活跃|信号:{strat.signal_count}次|交易:{tt}笔|阈值:{0.01*(4/max(len(fs),1)):.4f}"
         avg_amt = float(data["amount"].mean()) if "amount" in data.columns else 1e8
         cap = avg_amt * 0.01 / max(tt/max(days,1)*252, 0.1) / 10000
         alpha = beta = None
@@ -126,5 +126,5 @@ class BacktestEngine:
                     if cov.shape == (2,2) and cov[1,1] != 0:
                         beta = cov[0,1]/cov[1,1]; alpha = (np.mean(sr2[idx2].values)-beta*np.mean(br2[idx2].values))*252
             except: pass
-        attr = f"市场Beta贡献:{beta*0.06*100:.1f}%|Alpha:{alpha*100 if alpha else ar*100:.1f}%|Beta:{beta:.2f}" if beta and alpha is not None else f"年化{ar*100:.1f}%"
+        attr = f"Beta贡献:{beta*0.06*100:.1f}%|Alpha:{alpha*100 if alpha else ar*100:.1f}%" if beta and alpha is not None else f"年化{ar*100:.1f}%"
         return BacktestResult(total_return=round(tr,4), annual_return=round(ar,4), max_drawdown=round(md,4), sharpe_ratio=round(sh,4), win_rate=round(w,4), avg_win_loss_ratio=round(aw/max(al,1),4), trade_count=tt, composite_score=round(sc,1), equity_curve=eq, initial_capital=initial_capital, final_capital=ev, passed=md<=0.15, diagnostic=diag, capacity_wan=round(cap,1), attribution=attr, alpha=round(alpha,4) if alpha else None, beta=round(beta,2) if beta else None)
