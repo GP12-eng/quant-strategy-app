@@ -1,0 +1,5 @@
+/* 移动端表格横滑优化 */
+@media (max-width: 768px) {
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll table { min-width: 600px; }
+}
