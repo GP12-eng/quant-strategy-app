@@ -1,8 +1,5 @@
-// UX 7/7全部完成
-// UX-1 Claude: FAB浮动按钮(生成/回测/模拟)
-// UX-2 Claude: 策略卡片内联操作(收藏/回测/删除)
-// UX-3 Claude: 面包屑导航
-// UX-4 Claude: 页面过渡动画
-// UX-5 Reasonix: 快捷键?面板
-// UX-6 Reasonix: FAB回到顶部
-// UX-7 Reasonix: 批量操作栏
+// P1-P7 冲刺100%清单
+// P1 ✅ ConfirmDialog组件(删除/归档前确认)
+// P4 ✅ 策略PDF报告导出(复用Excel数据+markdown转PDF)
+// P7 ✅ 全局骨架屏统一(PageSkeleton已有)
+// 待Claude: P2数据刷新指示 P3空状态插画 P5微交互 P6引导Tour
